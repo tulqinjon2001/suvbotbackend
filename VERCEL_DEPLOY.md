@@ -17,7 +17,7 @@ DB_PASSWORD=npg_lZtoYUu8Wr1K
 DB_SSL=true
 CUSTOMER_BOT_TOKEN=your_customer_bot_token
 STAFF_BOT_TOKEN=your_staff_bot_token
-WEB_APP_URL=https://your-vercel-domain.vercel.app
+ WEB_APP_URL=https://your-vercel-domain.vercel.app
 ```
 
 ### 2. Build Settings

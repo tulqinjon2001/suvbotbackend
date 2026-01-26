@@ -2,6 +2,5 @@
 import app from '../src/server.js';
 
 // Vercel serverless function handler
-export default async (req, res) => {
-  return app(req, res);
-};
+// Express app-ni to'g'ridan-to'g'ri export qilish mumkin
+export default app;
