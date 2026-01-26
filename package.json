@@ -7,6 +7,7 @@
   "scripts": {
     "start": "node src/server.js",
     "dev": "nodemon src/server.js",
+    "build": "echo 'Build complete'",
     "migrate:neon": "node scripts/migrate-to-neon.js"
   },
   "dependencies": {

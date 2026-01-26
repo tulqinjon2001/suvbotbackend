@@ -115,7 +115,8 @@ app.use('/api/categories', authMiddleware, categoriesRouter);
 app.use('/api/products', authMiddleware, productsRouter);
 app.use('/api/orders', authMiddleware, ordersRouter);
 
-async function start() {
+// Database initialization
+async function initializeDatabase() {
   try {
     await sequelize.authenticate();
     await sequelize.sync({ alter: true });
@@ -123,14 +124,33 @@ async function start() {
     await seedDefaultAdmin();
     await seedDefaultPlans();
     console.log('PostgreSQL ulandi, jadvallar yangilandi.');
-    
-    startBots();
-    
-    app.listen(PORT, () => console.log(`API http://localhost:${PORT}`));
   } catch (e) {
     console.error('DB xatosi:', e.message);
-    process.exit(1);
+    throw e;
   }
 }
 
-start();
+// Initialize database (async, but don't wait in serverless)
+initializeDatabase().catch(console.error);
+
+// Start bots only in non-serverless environment (Vercel-da ishlamaydi)
+if (process.env.VERCEL !== '1' && !process.env.AWS_LAMBDA_FUNCTION_NAME) {
+  startBots();
+}
+
+// Start server only if not in serverless environment
+if (process.env.VERCEL !== '1' && !process.env.AWS_LAMBDA_FUNCTION_NAME) {
+  async function start() {
+    try {
+      await initializeDatabase();
+      app.listen(PORT, () => console.log(`API http://localhost:${PORT}`));
+    } catch (e) {
+      console.error('Server xatosi:', e.message);
+      process.exit(1);
+    }
+  }
+  start();
+}
+
+// Export app for Vercel serverless
+export default app;
