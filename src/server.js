@@ -119,36 +119,52 @@ app.use('/api/orders', authMiddleware, ordersRouter);
 async function initializeDatabase() {
   try {
     await sequelize.authenticate();
-    await sequelize.sync({ alter: true });
+    console.log('Database authentication muvaffaqiyatli.');
+    
+    // Sync database - alter: false production uchun xavfsizroq
+    const syncOptions = process.env.NODE_ENV === 'production' 
+      ? { alter: false }  // Production-da alter: false ishlatish tavsiya etiladi
+      : { alter: true };
+    
+    await sequelize.sync(syncOptions);
+    console.log('Database sync muvaffaqiyatli.');
+    
     await seedSuperAdmin();
     await seedDefaultAdmin();
     await seedDefaultPlans();
     console.log('PostgreSQL ulandi, jadvallar yangilandi.');
   } catch (e) {
     console.error('DB xatosi:', e.message);
+    console.error('DB xatosi details:', e);
     throw e;
   }
 }
 
-// Initialize database (async, but don't wait in serverless)
-initializeDatabase().catch(console.error);
-
-// Start bots only in non-serverless environment (Vercel-da ishlamaydi)
-if (process.env.VERCEL !== '1' && !process.env.AWS_LAMBDA_FUNCTION_NAME) {
-  startBots();
+// Start server function
+async function start() {
+  try {
+    await initializeDatabase();
+    
+    // Start bots only in non-serverless environment
+    if (process.env.VERCEL !== '1' && !process.env.AWS_LAMBDA_FUNCTION_NAME) {
+      startBots();
+    }
+    
+    // Render va boshqa platformalar uchun PORT environment variable-ni ishlatish
+    const serverPort = process.env.PORT || PORT;
+    app.listen(serverPort, '0.0.0.0', () => {
+      console.log(`API http://0.0.0.0:${serverPort}`);
+      console.log(`Server ishga tushdi. Port: ${serverPort}`);
+    });
+  } catch (e) {
+    console.error('Server xatosi:', e.message);
+    console.error('Server xatosi details:', e);
+    process.exit(1);
+  }
 }
 
-// Start server only if not in serverless environment
+// Start server only if not in serverless environment (Vercel)
 if (process.env.VERCEL !== '1' && !process.env.AWS_LAMBDA_FUNCTION_NAME) {
-  async function start() {
-    try {
-      await initializeDatabase();
-      app.listen(PORT, () => console.log(`API http://localhost:${PORT}`));
-    } catch (e) {
-      console.error('Server xatosi:', e.message);
-      process.exit(1);
-    }
-  }
   start();
 }
 
