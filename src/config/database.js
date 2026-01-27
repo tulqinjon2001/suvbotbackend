@@ -8,7 +8,7 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 // Vercel-da .env fayl yo'q, environment variable-lar to'g'ridan-to'g'ri beriladi
 // Faqat local development uchun .env fayl o'qiladi
 if (process.env.VERCEL !== '1') {
-  dotenv.config({ path: path.resolve(__dirname, '../../../.env') });
+  dotenv.config({ path: path.resolve(__dirname, '../../.env') });
 }
 
 const password = process.env.DB_PASSWORD;

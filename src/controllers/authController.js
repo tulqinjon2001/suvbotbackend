@@ -33,7 +33,7 @@ export async function login(req, res) {
 export async function seedDefaultAdmin() {
   const count = await Admin.count();
   if (count > 0) return;
-  const hash = await bcrypt.hash('suvbot', SALT_ROUNDS);
+  const hash = await bcrypt.hash('admin123', SALT_ROUNDS);
   await Admin.create({ username: 'admin', password: hash });
-  console.log('Default admin yaratildi: login=admin, parol=suvbot');
+  console.log('Default admin yaratildi: login=admin, parol=admin123');
 }
