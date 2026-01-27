@@ -1,8 +1,17 @@
 {
-  "rewrites": [
+  "version": 2,
+  "buildCommand": "npm install",
+  "installCommand": "npm install",
+  "builds": [
     {
-      "source": "/(.*)",
-      "destination": "/api/index.js"
+      "src": "api/index.js",
+      "use": "@vercel/node"
+    }
+  ],
+  "routes": [
+    {
+      "src": "/(.*)",
+      "dest": "/api/index.js"
     }
   ]
 }

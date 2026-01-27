@@ -1,10 +1,11 @@
-import 'dotenv/config';
+// Vercel-da dotenv/config ishlamaydi, environment variable-lar to'g'ridan-to'g'ri beriladi
+// Top-level await ishlatmaymiz, chunki bu muammo qilishi mumkin
+if (process.env.VERCEL !== '1') {
+  import('dotenv/config');
+}
+
 import express from 'express';
 import cors from 'cors';
-import { sequelize } from './models/index.js';
-import { seedDefaultAdmin } from './controllers/authController.js';
-import { seedDefaultPlans } from './controllers/seedBillingData.js';
-import { seedSuperAdmin } from './controllers/billingAuthController.js';
 import { authMiddleware } from './middleware/authMiddleware.js';
 import { startBots } from './bots/index.js';
 import authRouter from './routes/auth.js';
@@ -23,9 +24,14 @@ const PORT = process.env.PORT || 5000;
 app.use(cors());
 app.use(express.json());
 
+// Health check endpoint - database-ga ulanmaydi, shuning uchun birinchi bo'lib qo'yamiz
+app.get('/api/health', (_, res) => {
+  res.json({ ok: true, timestamp: new Date().toISOString() });
+});
+
+// Route-lar - ular database-ga ulanadi, shuning uchun keyinroq qo'yamiz
 app.use('/api/auth', authRouter);
 app.use('/api/billing', billingRouter);
-app.get('/api/health', (_, res) => res.json({ ok: true }));
 
 // Web App uchun ochiq endpointlar
 app.get('/api/webapp/products', productsController.getAllProducts);
@@ -118,25 +124,39 @@ app.use('/api/orders', authMiddleware, ordersRouter);
 // Database initialization
 async function initializeDatabase() {
   try {
+    // Lazy import - Vercel-da faqat kerak bo'lganda import qilamiz
+    const { sequelize } = await import('./models/index.js');
+    const { seedDefaultAdmin } = await import('./controllers/authController.js');
+    const { seedDefaultPlans } = await import('./controllers/seedBillingData.js');
+    const { seedSuperAdmin } = await import('./controllers/billingAuthController.js');
+    
     await sequelize.authenticate();
     console.log('Database authentication muvaffaqiyatli.');
     
-    // Sync database - alter: false production uchun xavfsizroq
-    const syncOptions = process.env.NODE_ENV === 'production' 
-      ? { alter: false }  // Production-da alter: false ishlatish tavsiya etiladi
-      : { alter: true };
-    
-    await sequelize.sync(syncOptions);
-    console.log('Database sync muvaffaqiyatli.');
-    
-    await seedSuperAdmin();
-    await seedDefaultAdmin();
-    await seedDefaultPlans();
-    console.log('PostgreSQL ulandi, jadvallar yangilandi.');
+    // Vercel-da sync qilmaymiz (serverless muhitda)
+    if (process.env.VERCEL !== '1') {
+      // Sync database - alter: false production uchun xavfsizroq
+      const syncOptions = process.env.NODE_ENV === 'production' 
+        ? { alter: false }  // Production-da alter: false ishlatish tavsiya etiladi
+        : { alter: true };
+      
+      await sequelize.sync(syncOptions);
+      console.log('Database sync muvaffaqiyatli.');
+      
+      await seedSuperAdmin();
+      await seedDefaultAdmin();
+      await seedDefaultPlans();
+      console.log('PostgreSQL ulandi, jadvallar yangilandi.');
+    } else {
+      console.log('Vercel serverless muhitida - database sync o\'tkazilmaydi.');
+    }
   } catch (e) {
     console.error('DB xatosi:', e.message);
     console.error('DB xatosi details:', e);
-    throw e;
+    // Vercel-da throw qilmaymiz, chunki bu function crash qiladi
+    if (process.env.VERCEL !== '1') {
+      throw e;
+    }
   }
 }
 
@@ -164,9 +184,11 @@ async function start() {
 }
 
 // Start server only if not in serverless environment (Vercel)
+// Vercel-da serverless function sifatida ishlaydi, shuning uchun app.listen() chaqirilmaydi
 if (process.env.VERCEL !== '1' && !process.env.AWS_LAMBDA_FUNCTION_NAME) {
   start();
 }
+// Vercel-da database initialization lazy bo'ladi - faqat request kelganda ishlaydi
 
 // Export app for Vercel serverless
 export default app;

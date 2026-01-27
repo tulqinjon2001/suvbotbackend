@@ -4,11 +4,15 @@
   "description": "Suv yetkazib berish API",
   "main": "src/server.js",
   "type": "module",
+  "engines": {
+    "node": ">=18.0.0"
+  },
   "scripts": {
     "start": "node src/server.js",
     "dev": "nodemon src/server.js",
     "build": "echo 'Build complete'",
-    "migrate:neon": "node scripts/migrate-to-neon.js"
+    "migrate:neon": "node scripts/migrate-to-neon.js",
+    "fix:sequences": "node scripts/fix-sequences.js"
   },
   "dependencies": {
     "bcrypt": "^6.0.0",

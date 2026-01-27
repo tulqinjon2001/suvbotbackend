@@ -116,11 +116,22 @@ export const createOrder = async (req, res) => {
       ],
     });
 
-    await notifyOperatorsNewOrder(orderWithDetails);
+    // Bot notification - xatolik bo'lsa ham order yaratiladi
+    try {
+      await notifyOperatorsNewOrder(orderWithDetails);
+    } catch (botError) {
+      console.error('Bot notification xatosi:', botError.message);
+      // Bot xatosi order yaratishni to'xtatmaydi
+    }
 
     res.status(201).json(orderWithDetails);
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    console.error('createOrder xatosi:', err);
+    console.error('createOrder xatosi stack:', err.stack);
+    res.status(500).json({ 
+      error: err.message || 'Buyurtma yaratishda xatolik yuz berdi',
+      details: process.env.NODE_ENV === 'development' ? err.stack : undefined
+    });
   }
 };
 
