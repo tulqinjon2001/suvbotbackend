@@ -77,7 +77,199 @@ app.put('/api/webapp/user/:id', async (req, res) => {
     res.status(500).json({ error: err.message });
   }
 });
-app.post('/api/webapp/orders', ordersController.createOrder);
+// Web App buyurtma yaratish - telefon raqam orqali mijozni topadi yoki yaratadi
+app.post('/api/webapp/orders', async (req, res) => {
+  try {
+    const { phone, full_name, items, address, location_lat, location_long, payment_type, telegram_id } = req.body;
+    
+    // Telefon raqam talab qilinadi
+    if (!phone) {
+      return res.status(400).json({ error: 'Telefon raqam talab qilinadi' });
+    }
+    
+    if (!items || !Array.isArray(items) || items.length === 0) {
+      return res.status(400).json({ error: 'Mahsulotlar (items) talab qilinadi' });
+    }
+
+    // Telefon raqam orqali mijozni topish yoki yaratish
+    const { User } = await import('./models/index.js');
+    const phoneNumber = String(phone).trim();
+    let customer = await User.findOne({ 
+      where: { phone: phoneNumber },
+      attributes: ['id', 'full_name', 'phone', 'telegram_id']
+    });
+
+    // Agar mijoz topilmasa, yangi mijoz yaratish
+    if (!customer) {
+      // Agar telegram_id bo'lsa, uni ishlatamiz
+      if (telegram_id) {
+        try {
+          // Telegram ID orqali ham tekshiramiz
+          customer = await User.findOne({ 
+            where: { telegram_id: BigInt(telegram_id) },
+            attributes: ['id', 'full_name', 'phone', 'telegram_id']
+          });
+          
+          if (customer) {
+            // Telefon raqamni yangilash (agar boshqa mijozga tegishli bo'lmasa)
+            const existingPhoneUser = await User.findOne({ 
+              where: { phone: phoneNumber },
+              attributes: ['id']
+            });
+            
+            if (!existingPhoneUser || existingPhoneUser.id === customer.id) {
+              customer.phone = phoneNumber;
+              if (full_name) customer.full_name = full_name;
+              await customer.save();
+            } else {
+              // Telefon raqam boshqa mijozga tegishli, faqat ismni yangilaymiz
+              if (full_name) customer.full_name = full_name;
+              await customer.save();
+            }
+          }
+        } catch (err) {
+          console.error('Telegram ID orqali mijoz topishda xatolik:', err);
+        }
+      }
+      
+      // Hali ham topilmasa, yangi mijoz yaratish
+      if (!customer) {
+        try {
+          customer = await User.create({
+            full_name: full_name || 'Mijoz',
+            phone: phoneNumber,
+            role: 'customer',
+            telegram_id: telegram_id ? BigInt(telegram_id) : null
+          });
+        } catch (err) {
+          // Unique constraint xatosi - telefon raqam allaqachon mavjud
+          if (err.name === 'SequelizeUniqueConstraintError') {
+            // Qayta urinib ko'ramiz - telefon raqam orqali topish
+            customer = await User.findOne({ 
+              where: { phone: phoneNumber },
+              attributes: ['id', 'full_name', 'phone', 'telegram_id']
+            });
+            
+            if (!customer) {
+              return res.status(400).json({ 
+                error: 'Telefon raqam bilan muammo yuz berdi. Iltimos, qayta urinib ko\'ring.' 
+              });
+            }
+          } else {
+            throw err;
+          }
+        }
+      }
+    } else {
+      // Mijoz topildi, ma'lumotlarni yangilash (agar kerak bo'lsa)
+      let updated = false;
+      if (full_name && full_name !== customer.full_name) {
+        customer.full_name = full_name;
+        updated = true;
+      }
+      if (telegram_id && !customer.telegram_id) {
+        customer.telegram_id = BigInt(telegram_id);
+        updated = true;
+      }
+      if (updated) {
+        await customer.save();
+      }
+    }
+
+    // Endi buyurtma yaratish
+    const { Product } = await import('./models/index.js');
+    let totalAmount = 0;
+    const orderItems = [];
+
+    for (const item of items) {
+      const product = await Product.findByPk(item.product_id);
+      if (!product) {
+        return res.status(404).json({ error: `Mahsulot ${item.product_id} topilmadi` });
+      }
+      const price = Number(item.price_at_purchase || product.price);
+      const quantity = Number(item.quantity) || 1;
+      const subtotal = price * quantity;
+      totalAmount += subtotal;
+      orderItems.push({
+        product_id: product.id,
+        quantity,
+        price_at_purchase: price,
+      });
+    }
+
+    // To'lov turini asosida paid_amount ni belgilash
+    const paidAmount = payment_type === 'rahmat' ? totalAmount : 0;
+
+    const { Order, OrderItem } = await import('./models/index.js');
+    const order = await Order.create({
+      customer_id: customer.id,
+      status: 'new',
+      total_amount: totalAmount,
+      paid_amount: paidAmount,
+      address: address || null,
+      location_lat: location_lat || null,
+      location_long: location_long || null,
+      payment_type: payment_type || 'cash',
+    });
+
+    for (const item of orderItems) {
+      await OrderItem.create({
+        order_id: order.id,
+        ...item,
+      });
+    }
+
+    const orderWithDetails = await Order.findByPk(order.id, {
+      include: [
+        { model: User, as: 'customer' },
+        {
+          model: OrderItem,
+          as: 'OrderItems',
+          include: [{ model: Product, as: 'Product' }],
+        },
+      ],
+    });
+
+    // Bot notification
+    try {
+      const { notifyOperatorsNewOrder } = await import('./bots/index.js');
+      await notifyOperatorsNewOrder(orderWithDetails);
+    } catch (botError) {
+      console.error('Bot notification xatosi:', botError.message);
+    }
+
+    res.status(201).json(orderWithDetails);
+  } catch (err) {
+    console.error('Webapp createOrder xatosi:', err);
+    console.error('Webapp createOrder xatosi stack:', err.stack);
+    
+    // Unique constraint xatosi (telefon raqam allaqachon mavjud)
+    if (err.name === 'SequelizeUniqueConstraintError') {
+      // Qayta urinib ko'ramiz - telefon raqam orqali topish
+      try {
+        const { User } = await import('./models/index.js');
+        const customer = await User.findOne({ 
+          where: { phone: String(req.body.phone).trim() }
+        });
+        
+        if (customer) {
+          // Mijoz topildi, buyurtmani qayta yaratishga urinamiz
+          // Lekin bu recursive bo'lishi mumkin, shuning uchun faqat xatolik qaytaramiz
+          return res.status(400).json({ 
+            error: 'Bu telefon raqam allaqachon boshqa mijozga tegishli. Iltimos, boshqa telefon raqam ishlating yoki mijoz ID-ni ko\'rsating.' 
+          });
+        }
+      } catch (retryErr) {
+        // Ignore
+      }
+    }
+    
+    res.status(500).json({ 
+      error: err.message || 'Buyurtma yaratishda xatolik yuz berdi',
+      details: process.env.NODE_ENV === 'development' ? err.stack : undefined
+    });
+  }
+});
 app.get('/api/webapp/orders/:id', async (req, res) => {
   try {
     const { Order, OrderItem, Product } = await import('./models/index.js');
